@@ -3,7 +3,11 @@ import os
 import shutil
 import sys
 import io
+import time
 from datetime import datetime
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
 
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -88,9 +92,33 @@ def move_files():
             except Exception as e:
                 print(f"Error moving {file}: {e}")
 
+class DownloadFolderHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        if not event.is_directory:
+            move_files()
+
+    def on_moved(self, event):
+        if not event.is_directory:
+            move_files()
+
+
 
 if __name__ == "__main__":
     print("Starting: download_folder_manager")
     create_folders()
     move_files()
     print("Download folder is organised.")
+
+    event_handler = DownloadFolderHandler()
+    observer = Observer()
+    observer.schedule(event_handler, FOLDER_PATH, recursive = False)
+    observer.start()
+
+    print(f"Watching folder: {FOLDER_PATH}")
+    try:
+        while True:
+            time.sleep(5)
+    except KeyboardInterrupt:
+        observer.stop()
+
+    observer.join()
