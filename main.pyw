@@ -8,12 +8,15 @@ from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-
+# To przekieruje wszystkie błędy do pliku error_log.txt w folderze ze skryptem
+log_path = os.path.join(os.path.dirname(__file__), "error_log.txt")
+sys.stderr = open(log_path, "w")
+sys.stdout = sys.stderr
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # get Downloads folder
-FOLDER_PATH = os.path.expanduser(r"C:\Users\damne\Downloads")
+FOLDER_PATH = os.path.expanduser("~/Downloads")
 
 # create DICT with folders
 FOLDERS = {
@@ -27,6 +30,13 @@ FOLDERS = {
     "Photoshop": [".psd"],
     "Other": []
 }
+
+# Plik do sprawdzania czy skrypt żyje
+DEBUG_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug_log.txt")
+
+def log(msg):
+    with open(DEBUG_LOG, "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now()}: {msg}\n")
 
 # creating folders function
 def create_folders():
@@ -50,6 +60,11 @@ def rename_file(filename, folder):
 
 #moving into folders function
 def move_files():
+    if not os.path.exists(FOLDER_PATH):
+        return
+
+    # Mała pauza na wypadek gdyby plik był jeszcze zapisywany
+    time.sleep(1)
 
     # os.listdir return list of all files within the folder
     for file in os.listdir(FOLDER_PATH):
@@ -92,33 +107,41 @@ def move_files():
             except Exception as e:
                 print(f"Error moving {file}: {e}")
 
-class DownloadFolderHandler(FileSystemEventHandler):
-    def on_created(self, event):
-        if not event.is_directory:
-            move_files()
 
-    def on_moved(self, event):
-        if not event.is_directory:
-            move_files()
+class DownloadHandler(FileSystemEventHandler):
+    def on_any_event(self, event):
+        # Ignoruj foldery
+        if event.is_directory:
+            return
 
+        # Wyświetl w logu (jeśli go używamy), że coś się dzieje
+        filename = os.path.basename(event.src_path)
+
+        # Ignoruj pliki tymczasowe przeglądarek
+        if filename.lower().endswith((".tmp", ".crdownload", ".opdownload")):
+            return
+
+        # Jeśli cokolwiek się stało (stworzenie, zmiana, przeniesienie pliku)
+        # poczekaj 1 sekundę i sprzątaj
+        time.sleep(1)
+        move_files()
 
 
 if __name__ == "__main__":
-    print("Starting: download_folder_manager")
     create_folders()
-    move_files()
-    print("Download folder is organised.")
+    move_files()  # Segregacja plików, które już tam były
 
-    event_handler = DownloadFolderHandler()
+    event_handler = DownloadHandler()
     observer = Observer()
-    observer.schedule(event_handler, FOLDER_PATH, recursive = False)
+    observer.schedule(event_handler, FOLDER_PATH, recursive=False)
     observer.start()
 
-    print(f"Watching folder: {FOLDER_PATH}")
     try:
         while True:
-            time.sleep(5)
-    except KeyboardInterrupt:
+            time.sleep(2)  # Krótka pętla, żeby skrypt był czujny
+    except Exception as e:
+        # Jeśli wystąpi błąd, spróbuj zapisać go do logu i nie wyłączaj się od razu
+        if 'log_message' in globals():
+            log_message(f"Błąd główny: {e}")
         observer.stop()
-
     observer.join()
